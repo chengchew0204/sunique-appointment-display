@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appointment Schedule - Today</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #3d4528 0%, #515a36 100%);
+            color: #ffffff;
+            padding: 20px;
+            padding-bottom: 115px;
+            line-height: 1.3;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+        }
+
+        /* Header with Logo */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding: 15px 25px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo {
+            height: 60px;
+            width: auto;
+        }
+
+        .title-section h1 {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 3px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .date {
+            font-size: 20px;
+            color: #ffffff;
+            opacity: 0.9;
+        }
+
+        .header-right {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 15px;
+        }
+
+        .stats {
+            display: none !important;
+        }
+
+        .refresh-section {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .last-updated {
+            font-size: 16px;
+            color: rgba(255, 255, 255, 0.9);
+            font-weight: 500;
+        }
+
+        .refresh-button {
+            box-sizing: border-box;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            height: 48px;           /* total height = 48px */
+            min-width: 140px;       /* prevent width changes */
+            width: max-content;     /* fit content naturally */
+            padding: 0 16px;        /* no vertical padding */
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+            transition: box-shadow .2s ease, opacity .2s ease;
+            flex-shrink: 0;
+            overflow: hidden;       /* contain any overflow from rotation */
+            contain: layout style;  /* isolate layout calculations */
+        }
+
+        .refresh-button:hover:not(.loading) {
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.5);
+        }
+
+        .refresh-button:active:not(.loading) {
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+        }
+
+        .refresh-button.loading {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .refresh-icon {
+            width: 20px;
+            height: 20px;
+            font-size: 20px;        /* ensure consistent icon size */
+            flex: 0 0 20px;         /* lock size, prevent flex growing */
+            display: inline-block;  /* better centering than block */
+            line-height: 1;
+            text-align: center;     /* center the icon character */
+            vertical-align: middle; /* prevent baseline shifts */
+        }
+
+        .refresh-button.loading .refresh-icon {
+            animation: spin 1s linear infinite;
+            transform-origin: 50% 50%;
+            will-change: transform; /* hint browser for GPU acceleration */
+        }
+
+        .refresh-button span {
+            display: inline-flex;
+            align-items: center;
+            line-height: 1;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Loading State */
+        #loading {
+            text-align: center;
+            padding: 100px 20px;
+            font-size: 36px;
+            color: #ffffff;
+        }
+
+        #loading::after {
+            content: '...';
+            animation: dots 1.5s infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+
+        .error {
+            padding: 30px;
+            background: #dc2626;
+            margin-bottom: 20px;
+            font-size: 24px;
+            border-radius: 10px;
+        }
+
+        /* Table Styles - TV Optimized */
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 20px;
+            font-size: 72px;
+        }
+
+        thead {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        th {
+            text-align: center;
+            font-weight: 700;
+            padding: 30px 40px;
+            background: #515a36;
+            color: #ffffff;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-size: 48px;
+        }
+        
+        th:nth-child(1) {
+            width: 50%;
+        }
+        
+        th:nth-child(2) {
+            width: 50%;
+        }
+
+        th:first-child {
+            border-radius: 10px 0 0 10px;
+        }
+
+        th:last-child {
+            border-radius: 0 10px 10px 0;
+        }
+
+        /* Status-based row colors */
+        tbody tr {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        tbody tr.row-assembling {
+            background: #e9903a;
+            color: #ffffff;
+            border-left: 8px solid #c97527;
+            animation: assembling-pulse 2s ease-in-out infinite;
+        }
+
+        tbody tr.row-scheduled {
+            background: #fffc54;
+            color: #000000;
+            border-left: 8px solid #e6d614;
+        }
+
+        tbody tr.row-finished {
+            background: #357d22;
+            color: #ffffff;
+            border-left: 8px solid #275e18;
+        }
+
+        tbody tr:hover {
+            transform: scale(1.02);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        tbody tr.row-assembling:hover {
+            box-shadow: 0 10px 30px rgba(16, 185, 129, 0.4);
+        }
+
+        tbody tr.row-scheduled:hover {
+            box-shadow: 0 10px 30px rgba(245, 158, 11, 0.4);
+        }
+
+        tbody tr.row-finished:hover {
+            box-shadow: 0 10px 30px rgba(107, 114, 128, 0.4);
+        }
+
+        td {
+            padding: 40px 40px;
+            font-weight: 700;
+            font-size: 72px;
+            text-align: center;
+        }
+        
+        td:nth-child(1) {
+            width: 50%;
+        }
+        
+        td:nth-child(2) {
+            width: 50%;
+        }
+
+        tbody tr td:first-child {
+            border-radius: 10px 0 0 10px;
+        }
+
+        tbody tr td:last-child {
+            border-radius: 0 10px 10px 0;
+        }
+
+        /* Status Badges - BIG and COLORFUL */
+        .status-badge {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 50px;
+            font-weight: 900;
+            font-size: 18px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            min-width: 150px;
+        }
+
+        .status-assembling {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: #ffffff;
+            animation: pulse 2s infinite;
+        }
+
+        .status-scheduled {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: #ffffff;
+        }
+
+        .status-finished {
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+            color: #ffffff;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+            }
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 6px 25px rgba(16, 185, 129, 0.6);
+            }
+        }
+
+        @keyframes assembling-pulse {
+            0%, 100% {
+                box-shadow: 0 0 20px rgba(233, 144, 58, 0.4), 0 0 40px rgba(233, 144, 58, 0.2);
+                transform: scale(1);
+            }
+            50% {
+                box-shadow: 0 0 30px rgba(233, 144, 58, 0.8), 0 0 60px rgba(233, 144, 58, 0.4);
+                transform: scale(1.02);
+            }
+        }
+
+        /* Warehouse Column */
+        .warehouse-value {
+            font-weight: 700;
+            color: #000000;
+        }
+
+        /* No Data State */
+        .no-data {
+            text-align: center;
+            padding: 100px 20px;
+            font-size: 42px;
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        #content {
+            display: none;
+        }
+
+        #content.visible {
+            display: block;
+        }
+
+        /* Responsive for different TV sizes */
+        @media (max-width: 1920px) {
+            .title-section h1 { font-size: 34px; }
+            .date { font-size: 18px; }
+            th { font-size: 42px; padding: 28px 35px; }
+            table { font-size: 64px; }
+            td { font-size: 64px; padding: 35px 35px; }
+        }
+
+        @media (max-width: 1366px) {
+            .title-section h1 { font-size: 30px; }
+            .date { font-size: 16px; }
+            th { font-size: 36px; padding: 25px 30px; }
+            table { font-size: 56px; }
+            td { font-size: 56px; padding: 30px 30px; }
+        }
+
+        /* Progress Summary */
+        .progress-summary {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 20px 30px;
+            background: rgba(61, 69, 40, 0.95);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 30px;
+            height: 75px;
+            z-index: 100;
+            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .progress-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #ffffff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .progress-stats {
+            display: flex;
+            gap: 30px;
+            flex-shrink: 0;
+        }
+
+        .progress-stat {
+            text-align: center;
+        }
+
+        .progress-stat-value {
+            font-size: 32px;
+            font-weight: 900;
+            color: #ffffff;
+            display: block;
+        }
+
+        .progress-stat-label {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.8);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        @media (max-width: 1920px) {
+            .progress-title { font-size: 22px; }
+            .progress-stat-value { font-size: 28px; }
+            .progress-stat-label { font-size: 13px; }
+        }
+
+        @media (max-width: 1366px) {
+            .progress-summary { 
+                flex-direction: column; 
+                align-items: center; 
+                gap: 15px;
+                height: auto;
+                padding: 15px 30px;
+            }
+            .progress-title { 
+                font-size: 18px; 
+                text-align: center;
+            }
+            .progress-stats { 
+                justify-content: center;
+            }
+            .progress-stat-value { font-size: 24px; }
+            .progress-stat-label { font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo-section">
+                <img src="img/logo.png" alt="Sunique Logo" class="logo">
+                <div class="title-section">
+                    <h1>Today's Appointment Schedule</h1>
+                    <div class="date" id="currentDate"></div>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="stats" id="stats"></div>
+                <div class="refresh-section">
+                    <div class="last-updated" id="lastUpdated">Last updated: --</div>
+                    <button class="refresh-button" id="refreshButton" onclick="refreshData()">
+                        <span class="refresh-icon">↻</span>
+                        <span>Refresh</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="loading" id="loading">
+            Loading appointments
+        </div>
+
+        <div id="content">
+            <div id="tableContainer"></div>
+            <div class="progress-summary" id="progressSummary">
+                <div class="progress-title">Today's Appointments</div>
+                <div class="progress-stats">
+                    <div class="progress-stat">
+                        <span class="progress-stat-value" id="totalAppointments">0</span>
+                        <span class="progress-stat-label">Total Appointments</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration - Update this URL after deploying to Railway
+        const API_SERVER_URL = 'http://localhost:3000'; // Change to your Railway URL after deployment
+
+        // Display current date
+        function displayCurrentDate() {
+            const today = new Date();
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('currentDate').textContent = today.toLocaleDateString('en-US', options);
+        }
+
+        // Download Excel file from proxy server
+        async function downloadFile() {
+            const response = await fetch(`${API_SERVER_URL}/api/download-schedule`);
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Failed to download file: ${response.status} ${response.statusText}`);
+            }
+
+            return await response.arrayBuffer();
+        }
+
+        // Parse Excel file
+        function parseExcel(arrayBuffer) {
+            const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+            
+            // Use the first sheet or look for a specific sheet
+            // If the Excel file has a specific sheet name for appointments, update it here
+            const sheetName = workbook.SheetNames[0]; // Use first sheet by default
+            
+            const sheet = workbook.Sheets[sheetName];
+            const data = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, dateNF: 'mm/dd/yyyy' });
+            return data;
+        }
+
+        // Get today's date in various formats for matching
+        function getTodayDateFormats() {
+            const today = new Date();
+            return {
+                date: today,
+                mmddyyyy: `${(today.getMonth() + 1).toString().padStart(2, '0')}/${today.getDate().toString().padStart(2, '0')}/${today.getFullYear()}`,
+                mmdyyyy: `${today.getMonth() + 1}/${today.getDate()}/${today.getFullYear()}`,
+                excelSerial: Math.floor((today - new Date(1899, 11, 30)) / (24 * 60 * 60 * 1000))
+            };
+        }
+
+        // Parse date from various formats
+        function parseDate(dateValue) {
+            if (!dateValue) return null;
+
+            // If it's already a Date object
+            if (dateValue instanceof Date) {
+                return isNaN(dateValue.getTime()) ? null : dateValue;
+            }
+
+            // If it's an Excel serial number (number)
+            if (typeof dateValue === 'number') {
+                const date = new Date((dateValue - 25569) * 86400 * 1000);
+                return isNaN(date.getTime()) ? null : date;
+            }
+
+            // If it's a string
+            if (typeof dateValue === 'string') {
+                // Handle YYYY-MM-DD format (avoid timezone issues)
+                const isoMatch = dateValue.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+                if (isoMatch) {
+                    const year = parseInt(isoMatch[1]);
+                    const month = parseInt(isoMatch[2]) - 1; // Month is 0-indexed
+                    const day = parseInt(isoMatch[3]);
+                    const date = new Date(year, month, day);
+                    if (!isNaN(date.getTime())) return date;
+                }
+                
+                // Try to handle formats like "11/5/25" (MM/D/YY)
+                const parts = dateValue.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+                if (parts) {
+                    let year = parseInt(parts[3]);
+                    // If year is 2 digits, assume 2000s
+                    if (year < 100) {
+                        year += 2000;
+                    }
+                    const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+                    const day = parseInt(parts[2]);
+                    const date = new Date(year, month, day);
+                    if (!isNaN(date.getTime())) return date;
+                }
+                
+                // Try standard parsing
+                const parsed = new Date(dateValue);
+                if (!isNaN(parsed.getTime())) return parsed;
+            }
+
+            return null;
+        }
+
+        // Check if two dates are the same day
+        function isSameDay(date1, date2) {
+            return date1.getFullYear() === date2.getFullYear() &&
+                   date1.getMonth() === date2.getMonth() &&
+                   date1.getDate() === date2.getDate();
+        }
+
+        // Filter and display data
+        function displayData(data) {
+            if (data.length === 0) {
+                showNoData('No data found in file');
+                return;
+            }
+
+            // Find the header row by looking for "Order" column
+            let headerRowIndex = -1;
+            let orderIdx = -1;
+            let appointmentTimeIdx = -1;
+            let dateIdx = -1;
+            
+            for (let i = 0; i < Math.min(data.length, 20); i++) {
+                const row = data[i];
+                for (let j = 0; j < row.length; j++) {
+                    const cellValue = (row[j] || '').toString().toLowerCase();
+                    if (cellValue.includes('order')) {
+                        headerRowIndex = i;
+                        orderIdx = j;
+                    }
+                    if (cellValue.includes('appointment') && cellValue.includes('time')) {
+                        appointmentTimeIdx = j;
+                    }
+                    if (cellValue.includes('date') || cellValue.includes('appointment date')) {
+                        dateIdx = j;
+                    }
+                }
+                if (headerRowIndex >= 0 && orderIdx >= 0) break;
+            }
+            
+            if (headerRowIndex === -1 || orderIdx === -1) {
+                showNoData('Could not find Order column in Excel file');
+                return;
+            }
+
+            // Get all rows after the header row, filter out empty rows
+            const rows = data.slice(headerRowIndex + 1).filter(row => {
+                return row.some(cell => cell !== null && cell !== undefined && cell !== '');
+            });
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            // Filter rows for today
+            const todaysAppointments = rows.filter(row => {
+                const dateValue = row[dateIdx >= 0 ? dateIdx : 0];
+                const parsedDate = parseDate(dateValue);
+                return parsedDate && isSameDay(parsedDate, today);
+            });
+
+            if (todaysAppointments.length === 0) {
+                showNoData('No appointments scheduled for today');
+                return;
+            }
+
+            // Sort appointments by time if appointment time exists
+            if (appointmentTimeIdx >= 0) {
+                todaysAppointments.sort((a, b) => {
+                    const timeA = (a[appointmentTimeIdx] || '').toString();
+                    const timeB = (b[appointmentTimeIdx] || '').toString();
+                    return timeA.localeCompare(timeB);
+                });
+            }
+
+            // Create table
+            let tableHTML = '<table>';
+            tableHTML += '<thead><tr>';
+            tableHTML += '<th>Order #</th>';
+            if (appointmentTimeIdx >= 0) {
+                tableHTML += '<th>Appointment Time</th>';
+            }
+            tableHTML += '</tr></thead><tbody>';
+
+            todaysAppointments.forEach(row => {
+                tableHTML += '<tr class="row-scheduled">';
+                tableHTML += `<td><strong>${row[orderIdx] || ''}</strong></td>`;
+                if (appointmentTimeIdx >= 0) {
+                    tableHTML += `<td><strong>${row[appointmentTimeIdx] || ''}</strong></td>`;
+                }
+                tableHTML += '</tr>';
+            });
+
+            tableHTML += '</tbody></table>';
+
+            document.getElementById('tableContainer').innerHTML = tableHTML;
+            
+            // Update appointment count
+            updateAppointmentCount(todaysAppointments.length);
+            
+            showContent();
+        }
+
+        // Update appointment count
+        function updateAppointmentCount(count) {
+            document.getElementById('totalAppointments').textContent = count;
+        }
+
+        function showNoData(message) {
+            document.getElementById('tableContainer').innerHTML = `<div class="no-data">${message}</div>`;
+            showContent();
+        }
+
+        function showContent() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').classList.add('visible');
+        }
+
+        function showError(message) {
+            document.getElementById('loading').innerHTML = `<div class="error">Error: ${message}</div>`;
+        }
+
+        // Update last updated time
+        function updateLastUpdatedTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true 
+            });
+            document.getElementById('lastUpdated').textContent = `Last updated: ${timeString}`;
+        }
+
+        // Main execution
+        async function main() {
+            displayCurrentDate();
+
+            try {
+                // Step 1: Download file from proxy server
+                const fileData = await downloadFile();
+
+                // Step 2: Parse Excel
+                const data = parseExcel(fileData);
+
+                // Step 3: Display filtered data
+                displayData(data);
+
+                // Step 4: Update last updated time
+                updateLastUpdatedTime();
+
+            } catch (error) {
+                console.error('Error:', error);
+                showError(error.message);
+            }
+        }
+
+        // Refresh function for manual refresh button
+        async function refreshData() {
+            const refreshButton = document.getElementById('refreshButton');
+            const refreshIcon = refreshButton.querySelector('.refresh-icon');
+            
+            // Disable button and show loading state
+            refreshButton.classList.add('loading');
+            refreshButton.disabled = true;
+
+            try {
+                // Download fresh data
+                const fileData = await downloadFile();
+                const data = parseExcel(fileData);
+                displayData(data);
+                updateLastUpdatedTime();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to refresh data: ' + error.message);
+            } finally {
+                // Re-enable button
+                refreshButton.classList.remove('loading');
+                refreshButton.disabled = false;
+            }
+        }
+
+        // Auto-refresh mechanism - refreshes every 5 minutes
+        let autoRefreshInterval = null;
+
+        function startAutoRefresh() {
+            // Clear any existing interval
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+            
+            // Set up auto-refresh every 5 minutes (300000 milliseconds)
+            autoRefreshInterval = setInterval(async () => {
+                console.log('Auto-refreshing data...');
+                await refreshData();
+            }, 300000); // 5 minutes = 5 * 60 * 1000 = 300000 ms
+            
+            console.log('Auto-refresh enabled: will refresh every 5 minutes');
+        }
+
+        // Run on page load
+        window.addEventListener('DOMContentLoaded', async () => {
+            await main();
+            // Start auto-refresh after initial load
+            startAutoRefresh();
+        });
+    </script>
+</body>
+</html>
